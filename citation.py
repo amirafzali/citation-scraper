@@ -16,11 +16,11 @@ def check_article_title(soup):
     # Meta Tag Check
     meta = soup.select_one('meta[name*=citation_title]')
     if meta and meta['content']:
-        return meta['content'].split('|')[0]
+        return meta['content']
 
     meta = soup.select_one('meta[property*=title]')
     if meta and meta['content']:
-        return meta['content'].split('|')[0]
+        return meta['content']
 
     # Manual Scrapes
     elif soup.find("title"):
@@ -71,7 +71,7 @@ def check_time(soup):
     val = ['date', 'time']
     checks = ['span', 'div', 'p', 'time']
 
-    meta = soup.select_one('meta[property*=pub]')
+    meta = soup.select_one('meta[property*=published]')
     if meta and meta['content']:
         return cleanse(parse_date(meta['content']), "date")
 
@@ -79,7 +79,7 @@ def check_time(soup):
     if meta and meta['content']:
         return cleanse(parse_date(meta['content']), "date")
 
-    meta = soup.select_one('meta[name*=pub]')
+    meta = soup.select_one('meta[name*=published]')
     if meta and meta['content']:
         return cleanse(parse_date(meta['content']), "date")
 
@@ -182,6 +182,7 @@ def authenticate(string, type):
 
 
 def parse_date(date):
+    print(date)
     parsed = dateparser.parse(date)
     try:
         return parsed.strftime('%d %B, %Y')
