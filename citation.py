@@ -68,7 +68,7 @@ def check_author(soup):
 
 def check_time(soup):
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
-    val = ['date', 'time']
+    val = ['date', 'time', 'pub']
     checks = ['span', 'div', 'p', 'time']
 
     meta = soup.select_one('meta[property*=published]')
@@ -91,10 +91,12 @@ def check_time(soup):
         return cleanse(parse_date(soup.select_one('time')['datetime']), "date")
 
     for attribute in atr:
-        for value in val:   
+        for value in val:
             for check in checks:
                 for each in soup.select(check+'['+attribute+'*="' + value + '"]'):
-                    if each.get('itemprop') and each.get('itemprop')=='datePublished':
+                    if each.get('class') and ('pub' in each.get('class') or 'pubdate' in each.get('class')):
+                        return parse_date(cleanse(each.string, "date"))
+                    if each.get('itemprop') and each.get('itemprop') == 'datePublished':
                         return parse_date(cleanse(each.string, "date"))
                     if each.get('datetime'):
                         return parse_date(cleanse(each['datetime'], "date"))
@@ -134,6 +136,11 @@ def check_publisher(soup):
                             pub = list(each2.stripped_strings)[0]
                             return process(pub, "publisher")
 
+    scope = soup.find_all(text='©')
+    print(scope)
+    if scope:
+        return process(scope[0], "publisher")
+
     return "No publisher found!"
 
 
@@ -156,14 +163,10 @@ def cleanse(string, type):
         string = string.replace("Published", "")
         string = string.replace("Updated", "")
     elif type == "publisher":
-        string = string.replace("All rights reserved", "")
-        string = string.replace(".", "")
-        string = string.replace("©", "")
-        string = string.replace("Copyright", "")
-        string = string.replace("copyright", "")
-        string = string.replace("(c)", "")
-        string = string.replace("Part of", "")
-        string = string.replace("part of", "")
+        replace = ["All rights reserved", ".", "©", "Copyright",
+                   "copyright", "(c)", "Part of", "part of"]
+        for criteria in replace:
+            string = string.replace(criteria, "")
         string = re.sub('\d{4}', '', string).strip()
     if string.strip() == "":
         return 'Parsing error.'
@@ -199,35 +202,20 @@ def prepareJSON(website, publisher, article, first_name, middle_name, lastName, 
 def setupandprepare(website, publisher, article, author, date):
     name_dict = author.split(" ")
     date_dict = date.replace(",", "").split(" ")
-
+    day = month = year = ""
+    first_name = last_name = middle_name = ""
     if len(date_dict) == 3:
-        day = date_dict[0]
-        month = date_dict[1]
-        year = date_dict[2]
+        day, month, year = date_dict
     elif len(date_dict) == 2:
-        day = ""
         month = date_dict[1]
         year = date_dict[2]
     elif len(date_dict) == 1:
-        day = ""
-        month = ""
         year = date_dict[2]
-    else:
-        day = ""
-        month = ""
-        year = ""
     if len(name_dict) == 3:
-        first_name = name_dict[0]
-        middle_name = name_dict[1]
-        last_name = name_dict[2]
+        first_name, middle_name, last_name = name_dict
     elif len(name_dict) == 2:
         first_name = name_dict[0]
-        middle_name = ""
         last_name = name_dict[1]
-    else:
-        first_name = ""
-        middle_name = ""
-        last_name = ""
 
     return prepareJSON(website,
                        publisher,
