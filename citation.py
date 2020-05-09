@@ -36,8 +36,8 @@ def check_author(soup):
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
     val = ['author', 'byline', 'dc.creator', 'by', 'bioLink', "auths"]
     checks = ['meta', 'span', 'a', 'div']
-    combinations = product(atr,val,checks)
-    print(combinations)
+    combinations = list(product(atr,val,checks))
+
     if(soup.select_one('meta[name*=citation_author]')):
         meta = soup.select('meta[name=citation_author]')
         authors = ""
@@ -50,20 +50,21 @@ def check_author(soup):
     if meta and meta['content']:
         return meta['content']
 
-    for attribute in atr:
-        for value in val:
-            for check in checks:
-                for each in soup.select(check+'['+attribute+'*="'+value+'"]'):
-                    if each.string:
-                        return authenticate(cleanse(each.string, "author"), "author")
-                    if each.select_one("a[href*=profile]") and each.select_one("a[href*=profile]").string:
-                        return authenticate(cleanse(each.select_one("a[href*=profile]").string, "author"), "author")
-                    if each.select_one("a[href*=person]") and each.select_one("a[href*=person]").string:
-                        return authenticate(cleanse(each.select_one("a[href*=person]").string, "author"), "author")
-                    if each.select_one("a[href*=author]") and each.select_one("a[href*=author]").string:
-                        return authenticate(cleanse(each.select_one("a[href*=author]").string, "author"), "author")
-                    if each.select_one("a[href*=editor]") and each.select_one("a[href*=editor]").string:
-                        return authenticate(cleanse(each.select_one("a[href*=editor]").string, "author"), "author")
+
+    for comb in combinations:
+        attribute, value, check = comb
+
+        for each in soup.select(check+'['+attribute+'*="'+value+'"]'):
+            if each.string:
+                return authenticate(cleanse(each.string, "author"), "author")
+            if each.select_one("a[href*=profile]") and each.select_one("a[href*=profile]").string:
+                return authenticate(cleanse(each.select_one("a[href*=profile]").string, "author"), "author")
+            if each.select_one("a[href*=person]") and each.select_one("a[href*=person]").string:
+                return authenticate(cleanse(each.select_one("a[href*=person]").string, "author"), "author")
+            if each.select_one("a[href*=author]") and each.select_one("a[href*=author]").string:
+                return authenticate(cleanse(each.select_one("a[href*=author]").string, "author"), "author")
+            if each.select_one("a[href*=editor]") and each.select_one("a[href*=editor]").string:
+                return authenticate(cleanse(each.select_one("a[href*=editor]").string, "author"), "author")
 
     return "No author name found!"
 
@@ -89,7 +90,7 @@ def check_time(soup):
     if meta and meta['content'] and not meta['name'].find('validate'):
         return cleanse(parse_date(meta['content']), "date")
 
-    if soup.select_one('time') and soup.select_one('time').has_key('datetime'):
+    if soup.select_one('time') and soup.select_one('time').has_attr('datetime'):
         return cleanse(parse_date(soup.select_one('time')['datetime']), "date")
 
     for attribute in atr:
@@ -158,20 +159,18 @@ def process(string, type):
 
 
 def cleanse(string, type):
-    if type == "author":
-        string = string.replace("By", " ")
-        string = string.replace("by", " ")
-    elif type == "date":
-        string = string.replace("Published", "")
-        string = string.replace("Updated", "")
-    elif type == "publisher":
-        replace = ["All rights reserved", ".", "©", "Copyright",
-                   "copyright", "(c)", "Part of", "part of"]
-        for criteria in replace:
-            string = string.replace(criteria, "")
-        string = re.sub('\d{4}', '', string).strip()
-    if string.strip() == "":
-        return 'Parsing error.'
+
+    clears = {"author": ["By"], "date": ["Published", "Updated"], "publisher": ["All rights reserved", ".", "©", "Copyright",
+                   "(c)", "Part of"]}
+
+    if not type in clears: return "Parsing error."
+
+    for regex in clears[type]:
+        string = string.replace(regex, "")
+    string = re.sub('\d{4}', '', string).strip()
+
+    if string.strip() == "": return 'Parsing error.'
+
     return string.strip()
 
 
@@ -196,28 +195,30 @@ def parse_date(date):
 
 
 def prepare_JSON(website, publisher, article, first_name, middle_name, lastName, day, month, year):
-    dict = {'website': website, 'publisher': publisher, 'article': article, 'firstName': first_name,
+    return {'website': website, 'publisher': publisher, 'article': article, 'firstName': first_name,
             'middleName': middle_name, 'lastName': lastName, 'day': day, 'month': month, 'year': year}
-    return json.dumps(dict)
 
 
 def output_JSON(website, publisher, article, author, date):
-    name_dict = author.split(" ")
-    date_dict = date.replace(",", "").split(" ")
+
+    name = author.split(" ")
+    split_date = date.replace(",", "").split(" ")
     day = month = year = ""
     first_name = last_name = middle_name = ""
-    if len(date_dict) == 3:
-        day, month, year = date_dict
-    elif len(date_dict) == 2:
-        month = date_dict[1]
-        year = date_dict[2]
-    elif len(date_dict) == 1:
-        year = date_dict[2]
-    if len(name_dict) == 3:
-        first_name, middle_name, last_name = name_dict
-    elif len(name_dict) == 2:
-        first_name = name_dict[0]
-        last_name = name_dict[1]
+
+    if len(split_date) == 3:
+        day, month, year = split_date
+    elif len(split_date) == 2:
+        month, year = split_date
+    elif len(split_date) == 1:
+        year = split_date[0]
+
+    if len(name) == 3:
+        first_name, middle_name, last_name = name
+    elif len(name) >= 2:
+        first_name, last_name = name[0], name[1]
+
+
 
     return prepare_JSON(website,
                        publisher,
@@ -230,24 +231,39 @@ def output_JSON(website, publisher, article, author, date):
                        year)
 
 
+def sanitize_url(url: str) -> str:
+    url = url.replace(" ", "")
+    prefix = ""
+
+    if not url.startswith("http://") and not url.startswith("https://"):
+        prefix = "http://"
+    
+    return prefix+url
+
+
 while True:
-    URL = input("Please enter the website URL: ")
+
+    URL = sanitize_url(input("Please enter the website URL: "))
+    TIMEOUT = 15.0
+
     try:
         headers = requests.utils.default_headers()
         headers.update({
             'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64;rv:52.0) Gecko/20100101 Firefox/52.0',
         })
         result = requests.get(URL.replace(" ", ""),
-                              timeout=15.0, headers=headers)
+                              timeout=TIMEOUT, headers=headers)
         break
+
     except requests.exceptions.Timeout as e:
         print("\nRequest took over 15 seconds. Website down? Try again.\n\n")
     except requests.exceptions.MissingSchema as e:
-        print("\nInvalid URL format. Did you forget http://?\n\n")
+        print("\nInvalid URL format")
     except requests.exceptions.InvalidSchema as e:
-        print("\nInvalid URL format. Did you forget http://?\n\n")
+        print("\nInvalid URL format")
     except e:
         print('An error occured. Please restart tool.')
+
 
 page_content = result.content
 soup = BeautifulSoup(page_content, "lxml")
