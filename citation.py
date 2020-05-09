@@ -10,6 +10,7 @@ import dateparser
 import re
 import json
 from functools import reduce
+from itertools import product
 
 
 def check_article_title(soup):
@@ -35,7 +36,8 @@ def check_author(soup):
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
     val = ['author', 'byline', 'dc.creator', 'by', 'bioLink', "auths"]
     checks = ['meta', 'span', 'a', 'div']
-
+    combinations = product(atr,val,checks)
+    print(combinations)
     if(soup.select_one('meta[name*=citation_author]')):
         meta = soup.select('meta[name=citation_author]')
         authors = ""
@@ -193,13 +195,13 @@ def parse_date(date):
         return "Issue scraping date!"
 
 
-def prepareJSON(website, publisher, article, first_name, middle_name, lastName, day, month, year):
+def prepare_JSON(website, publisher, article, first_name, middle_name, lastName, day, month, year):
     dict = {'website': website, 'publisher': publisher, 'article': article, 'firstName': first_name,
             'middleName': middle_name, 'lastName': lastName, 'day': day, 'month': month, 'year': year}
     return json.dumps(dict)
 
 
-def setupandprepare(website, publisher, article, author, date):
+def output_JSON(website, publisher, article, author, date):
     name_dict = author.split(" ")
     date_dict = date.replace(",", "").split(" ")
     day = month = year = ""
@@ -217,7 +219,7 @@ def setupandprepare(website, publisher, article, author, date):
         first_name = name_dict[0]
         last_name = name_dict[1]
 
-    return prepareJSON(website,
+    return prepare_JSON(website,
                        publisher,
                        article,
                        first_name,
@@ -259,4 +261,4 @@ print("Publisher: " + publisher)
 print("Article Title: " + article)
 print("Author Name: " + authors)
 print("Date: " + date)
-print(setupandprepare(website_name, publisher, article, authors, date))
+print(output_JSON(website_name, publisher, article, authors, date))
