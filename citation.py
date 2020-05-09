@@ -13,7 +13,7 @@ from functools import reduce
 from itertools import product
 
 
-def check_article_title(soup):
+def grab_article_title(soup: "BeautifulSoup") -> str:
     # Meta Tag Check
     meta = soup.select_one('meta[name*=citation_title]')
     if meta and meta['content']:
@@ -32,7 +32,8 @@ def check_article_title(soup):
     return "No article title found!"
 
 
-def check_author(soup):
+
+def grab_author(soup: "BeautifulSoup") -> str:
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
     val = ['author', 'byline', 'dc.creator', 'by', 'bioLink', "auths"]
     checks = ['meta', 'span', 'a', 'div']
@@ -69,7 +70,7 @@ def check_author(soup):
     return "No author name found!"
 
 
-def check_time(soup):
+def grab_time(soup: "BeautifulSoup") -> str:
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
     val = ['date', 'time', 'pub']
     checks = ['span', 'div', 'p', 'time']
@@ -109,7 +110,7 @@ def check_time(soup):
     return "No date found!"
 
 
-def check_publisher(soup):
+def grab_publisher(soup: "BeautifulSoup") -> str:
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
     val = ['publisher', 'copyright', ]
     checks = ['span', 'div', 'p', 'a', 'li']
@@ -147,45 +148,45 @@ def check_publisher(soup):
     return "No publisher found!"
 
 
-def check_website(soup):
+def grab_website(soup: "BeautifulSoup") -> str:
     meta = soup.select_one('meta[property*=og:site_name]')
     if meta and meta['content']:
         return meta['content']
     return "No website name found!"
 
 
-def process(string, type):
-    return authenticate(cleanse(string, type), type)
+def process(line: str, ptype: str) -> str:
+    return authenticate(cleanse(line, ptype), ptype)
 
 
-def cleanse(string, type):
+def cleanse(line: str, ptype: str) -> str:
 
     clears = {"author": ["By"], "date": ["Published", "Updated"], "publisher": ["All rights reserved", ".", "©", "Copyright",
                    "(c)", "Part of"]}
 
-    if not type in clears: return "Parsing error."
+    if not ptype in clears: return "Parsing error."
 
-    for regex in clears[type]:
-        string = string.replace(regex, "")
-    string = re.sub('\d{4}', '', string).strip()
+    for regex in clears[ptype]:
+        line = line.replace(regex, "")
+    line = re.sub('\d{4}', '', line).strip()
 
-    if string.strip() == "": return 'Parsing error.'
+    if line.strip() == "": return 'Parsing error.'
 
-    return string.strip()
+    return line.strip()
 
 
-def authenticate(string, type):
-    if len(string) == 0:
-        return "Error retrieving " + type + "!"
-    if type == "author" or type == "publisher":
-        if 4 < len(string) < 45:
-            return string
+def authenticate(line: str, ptype: str) -> str:
+    if len(line) == 0:
+        return "Error retrieving " + ptype + "!"
+    if ptype == "author" or ptype == "publisher":
+        if 4 < len(line) < 45:
+            return line
         else:
-            return ""  # "(Possible " + type + ") " + string
-    return string
+            return ""  # "(Possible " + type + ") " + line
+    return line
 
 
-def parse_date(date):
+def parse_date(date: str) -> str:
     print(date)
     parsed = dateparser.parse(date)
     try:
@@ -241,40 +242,42 @@ def sanitize_url(url: str) -> str:
     return prefix+url
 
 
-while True:
+def main():
+    while True:
 
-    URL = sanitize_url(input("Please enter the website URL: "))
-    TIMEOUT = 15.0
+        URL = sanitize_url(input("Please enter the website URL: "))
+        TIMEOUT = 15.0
 
-    try:
-        headers = requests.utils.default_headers()
-        headers.update({
-            'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64;rv:52.0) Gecko/20100101 Firefox/52.0',
-        })
-        result = requests.get(URL.replace(" ", ""),
-                              timeout=TIMEOUT, headers=headers)
-        break
+        try:
+            headers = requests.utils.default_headers()
+            headers.update({
+                'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64;rv:52.0) Gecko/20100101 Firefox/52.0',
+            })
+            result = requests.get(URL,
+                                timeout=TIMEOUT, headers=headers)
+            break
 
-    except requests.exceptions.Timeout as e:
-        print("\nRequest took over 15 seconds. Website down? Try again.\n\n")
-    except requests.exceptions.MissingSchema as e:
-        print("\nInvalid URL format")
-    except requests.exceptions.InvalidSchema as e:
-        print("\nInvalid URL format")
-    except e:
-        print('An error occured. Please restart tool.')
+        except requests.exceptions.Timeout as e:
+            print("\nRequest took over 15 seconds. Website down? Try again.\n\n")
+        except requests.exceptions.MissingSchema as e:
+            print("\nInvalid URL format")
+        except requests.exceptions.InvalidSchema as e:
+            print("\nInvalid URL format")
+        except:
+            print('An error occured. Please restart tool.')
 
+    page_content = result.content
+    soup = BeautifulSoup(page_content, "lxml")
+    website_name = grab_website(soup)
+    publisher = grab_publisher(soup)
+    article = grab_article_title(soup).strip()
+    authors = grab_author(soup).strip()
+    date = grab_time(soup).strip()
+    print("Website: " + website_name)
+    print("Publisher: " + publisher)
+    print("Article Title: " + article)
+    print("Author Name: " + authors)
+    print("Date: " + date)
+    print(output_JSON(website_name, publisher, article, authors, date))
 
-page_content = result.content
-soup = BeautifulSoup(page_content, "lxml")
-website_name = check_website(soup)
-publisher = check_publisher(soup)
-article = check_article_title(soup).strip()
-authors = check_author(soup).strip()
-date = check_time(soup).strip()
-print("Website: " + website_name)
-print("Publisher: " + publisher)
-print("Article Title: " + article)
-print("Author Name: " + authors)
-print("Date: " + date)
-print(output_JSON(website_name, publisher, article, authors, date))
+main()
