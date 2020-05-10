@@ -32,42 +32,56 @@ def get_formatted_author_name(name: str) -> dict:
     return {'firstName': first, 'middleName': middle, 'lastName': last, 'fullName': to_use}
 
 def try_schema(soup: "BeautifulSoup"):
-    data = soup.select_one("script[type*=json]")
+    data = soup.select("script[type*=json]")
     json_map = {'website': '', 'publisher': '', 'headline': '', 'authors': [], 'published': {'day': '', 'month': '', 'year': ''}}
+    to_return = {'status': False, 'data': json_map}
     
-    if data and data.string:
-        json_data = json.loads(data.string)
+    site = soup.select_one('meta[property*="og:site_name"]')
+    
+    for inst in data:
+        if not inst.string: continue
 
-        site = soup.select_one('meta[property*="og:site_name"]')
+        json_data = json.loads(inst.string)
+        print(json.dumps(json_data, indent=4, sort_keys=True))
 
-        if not "@context" in json_data: return json_map
+        if not "@context" in json_data and not "@type" in json_data: return to_return
 
-        if 'headline' in json_data: 
-            json_map['headline'] = json_data['headline']
+        def schem_iteration(json_data):
+            if 'headline' in json_data: 
+                json_map['headline'] = json_data['headline']
 
-        if 'publisher' in json_data and 'name' in json_data['publisher']:
-            json_map['publisher'] = json_data['publisher']['name']
+            if 'publisher' in json_data and 'name' in json_data['publisher']:
+                json_map['publisher'] = json_data['publisher']['name']
 
-        if site and 'content' in site:
-            json_map['website'] = site['content']
+            if site and site['content']:
+                json_map['website'] = site['content']
 
-        if 'author' in json_data:
-            if type(json_data['author']) == list:
-                for elm in json_data['author']:
-                    author = json_data['author']['name']
+            if 'author' in json_data:
+                authorTag = json_data['author']
+                if type(authorTag) == list:
+                    for elm in authorTag:
+                        if type(elm) == str:
+                            json_map['authors'].append(get_formatted_author_name(elm))
+                        elif 'name' in elm: 
+                            json_map['authors'].append(get_formatted_author_name(elm['name']))
+                else:
+                    author = 'name' in authorTag and authorTag['name']
                     if author: json_map['authors'].append(get_formatted_author_name(author))
-            else:
-                author = json_data['author']['name']
-                if author: json_map['authors'].append(get_formatted_author_name(author))
 
-        if 'datePublished' in json_data:
-            parsed = dateparser.parse(json_data['datePublished'])
-            if parsed:
-                date = parsed.strftime('%d %B %Y')
-                day, month, year = date.split(" ")
-                json_map['published'] = {'day': day, 'month': month, 'year': year}
+            if 'datePublished' in json_data:
+                parsed = dateparser.parse(json_data['datePublished'])
+                if parsed:
+                    date = parsed.strftime('%d %B %Y')
+                    day, month, year = date.split(" ")
+                    json_map['published'] = {'day': day, 'month': month, 'year': year}
 
-    print(json_map)
+        schem_iteration(json_data)
+        if '@graph' in json_data: [schem_iteration(elm) for elm in json_data['@graph']]
+        
+        to_return['status'] = True
+
+    to_return['data'] = json_map
+    return to_return
 
 def grab_article_title(soup: "BeautifulSoup") -> str:
 
@@ -133,7 +147,7 @@ def grab_publish_date(soup: "BeautifulSoup") -> str:
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
     val = ['date', 'time', 'pub']
     checks = ['span', 'div', 'p', 'time']
-    manual_combos = [atr,val,checks]
+    manual_combos = product(atr,val,checks)
 
     meta_scrapes = [["property", "name"], ["published","time","content","date"]]
     meta_combos = product(*meta_scrapes)
@@ -151,19 +165,19 @@ def grab_publish_date(soup: "BeautifulSoup") -> str:
     if soup.select_one('time') and soup.select_one('time').has_attr('datetime'):
         return cleanse(parse_date(soup.select_one('time')['datetime']), "date")
 
-    for attribute in atr:
-        for value in val:
-            for check in checks:
-                for each in soup.select(check+'['+attribute+'*="' + value + '"]'):
-                    if each.get('class') and ('pub' in each.get('class') or 'pubdate' in each.get('class')):
-                        return parse_date(cleanse(each.string, "date"))
-                    if each.get('itemprop') and each.get('itemprop') == 'datePublished':
-                        return parse_date(cleanse(each.string, "date"))
-                    if each.get('datetime'):
-                        return parse_date(cleanse(each['datetime'], "date"))
-                    if each.string:
-                        if "Published:" in each.string or "Posted:" in each.string:
-                            parse_date(cleanse(each.string, "date"))
+    for comb in manual_combos:
+        attribute, value, check = comb
+        for each in soup.select(check+'['+attribute+'*="' + value + '"]'):
+            if each.get('class') and ('pub' in each.get('class') or 'pubdate' in each.get('class')):
+                return parse_date(cleanse(each.string, "date"))
+            if each.get('itemprop') and each.get('itemprop') == 'datePublished':
+                return parse_date(cleanse(each.string, "date"))
+            if each.get('datetime'):
+                return parse_date(cleanse(each['datetime'], "date"))
+            if each.string:
+                if "Published:" in each.string or "Posted:" in each.string:
+                    parse_date(cleanse(each.string, "date"))
+
     return "No date found!"
 
 
@@ -178,24 +192,6 @@ def grab_publisher(soup: "BeautifulSoup") -> str:
     meta = soup.select_one('meta[name*=copyright]')
     if meta and meta['content']:
         return process(meta['content'], "publisher")
-
-    for attribute in atr:
-        for value in val:
-            for check in checks:
-                area = soup.find('footer')
-                if area:
-                    for each in area.select(check+'['+attribute+'*="'+value+'"]'):
-                        if each.string:
-                            return process(each.string, "publisher")
-                for each in soup.select(check + '[' + attribute + '*="Organization"]'):
-                    for each2 in each.select("span"):
-                        if each2.string:
-                            return process(each2.string, "publisher")
-                for each in soup.select(check + '[' + attribute + '*="footer"]'):
-                    for each2 in each.select('p[' + attribute + '*="copyright"]'):
-                        if each2.stripped_strings:
-                            pub = list(each2.stripped_strings)[0]
-                            return process(pub, "publisher")
 
     scope = soup.find_all(text='©')
     print(scope)
@@ -297,11 +293,7 @@ def sanitize_url(url: str) -> str:
     prefix = "http://" if not url.startswith("http://") and not url.startswith("https://") else ""
     return prefix+url
 
-def get_sitation_fields(res):
-    page_content = res.content
-    soup = BeautifulSoup(page_content, "lxml")
-
-    try_schema(soup)
+def get_sitation_fields(soup):
 
     website_name = grab_website(soup).strip()
     publisher = grab_publisher(soup).strip()
@@ -335,12 +327,19 @@ def main():
         except:
             print('An error occured. Please restart tool.')
 
-    website_name, publisher, article, authors, date = get_sitation_fields(result)
-    print("Website: " + website_name)
-    print("Publisher: " + publisher)
-    print("Article Title: " + article)
-    print("Author Name: " + authors)
-    print("Date: " + date)
-    print(output_JSON(website_name, publisher, article, authors, date))
+    page_content = result.content
+    soup = BeautifulSoup(page_content, "lxml")
+    schema = try_schema(soup)
+    
+    if schema['status']:
+        print(schema['data'])
+    else:
+        website_name, publisher, article, authors, date = get_sitation_fields(soup)
+        print("Website: " + website_name)
+        print("Publisher: " + publisher)
+        print("Article Title: " + article)
+        print("Author Name: " + authors)
+        print("Date: " + date)
+        print(output_JSON(website_name, publisher, article, authors, date))
 
 main()
