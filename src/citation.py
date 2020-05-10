@@ -1,16 +1,11 @@
 # -*- coding: utf-8 -*-
-
 '''
     AMIR AFZALI - 2019-2020
 '''
 
 from bs4 import BeautifulSoup
 import requests
-import dateparser
-import re
 import json
-from functools import reduce
-from itertools import product
 from schema_parse import try_schema
 from manual_parse import get_citation_fields, output_JSON
 

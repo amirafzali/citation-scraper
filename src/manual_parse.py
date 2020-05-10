@@ -116,13 +116,9 @@ def grab_publisher(soup: "BeautifulSoup") -> str:
     val = ['publisher', 'copyright', ]
     checks = ['span', 'div', 'p', 'a', 'li']
 
-    meta = soup.select_one('meta[name*=publisher]')
-    if meta and meta['content']:
-        return process(meta['content'], "publisher")
-
-    meta = soup.select_one('meta[name*=copyright]')
-    if meta and meta['content']:
-        return process(meta['content'], "publisher")
+    for meta in [soup.select_one('meta[name*=publisher]'), soup.select_one('meta[name*=copyright]')]:
+        if meta and meta['content']:
+            return process(meta['content'], "publisher")
 
     return ""
 
@@ -154,18 +150,21 @@ def cleanse(line: str, ptype: str) -> str:
 
 def is_validfield(line: str, ptype: str) -> str:
     if len(line) == 0:
-        return f"Error retrieving {ptype} !"
+        return ""
+
     if ptype == "author" or ptype == "publisher":
         if 4 < len(line) < 45:
             return line
         else:
-            return ""  # "(Possible " + type + ") " + line
+            return ""
+
     return line
 
 
 def parse_date(date: str) -> str:    
     try:
         parsed = dateparser.parse(date)
+        
         return parsed.strftime('%d %B, %Y')
     except:
         print("Date parse issue detected")
@@ -174,8 +173,7 @@ def parse_date(date: str) -> str:
 def is_date(date: str) -> bool:
     return not not dateparser.parse(date)
 
-def output_JSON(website, publisher, article, author, date):
-
+def output_JSON(website: str, publisher: str, article: str, author: str, date: str):
     name = author.split(" ")
     split_date = date.replace(",", "").split(" ")
     day = month = year = ""
