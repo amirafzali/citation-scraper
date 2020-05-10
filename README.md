@@ -10,4 +10,4 @@ The tool first attempts to retrieve information through meta tags, then the page
 
 ### Run instructions
 
-`python3 citation.py`
+`python3 src/citation.py`
