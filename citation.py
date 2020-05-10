@@ -30,7 +30,7 @@ def grab_article_title(soup: "BeautifulSoup") -> str:
     for tag in manual:
         if soup.find(tag): return soup[tag].string
 
-    return "No article title found!"
+    return ""
 
 
 
@@ -71,7 +71,7 @@ def grab_author(soup: "BeautifulSoup") -> str:
                 if each.select_one(f"a[href*={link}]") and each.select_one(f"a[href*={link}]").string:
                     return authenticate(cleanse(each.select_one(f"a[href*={link}]").string, "author"), "author")
 
-    return "No author name found!"
+    return ""
 
 
 def grab_publish_date(soup: "BeautifulSoup") -> str:
@@ -109,7 +109,7 @@ def grab_publish_date(soup: "BeautifulSoup") -> str:
                 if "Published:" in each.string or "Posted:" in each.string:
                     parse_date(cleanse(each.string, "date"))
 
-    return "No date found!"
+    return ""
 
 
 def grab_publisher(soup: "BeautifulSoup") -> str:
@@ -129,14 +129,13 @@ def grab_publisher(soup: "BeautifulSoup") -> str:
     if scope:
         return process(scope[0], "publisher")
 
-    return "No publisher found!"
-
+    return ""
 
 def grab_website(soup: "BeautifulSoup") -> str:
     meta = soup.select_one('meta[property*="og:site_name"]')
     if meta and meta['content']:
         return meta['content']
-    return "No website name found!"
+    return ""
 
 
 def process(line: str, ptype: str) -> str:
