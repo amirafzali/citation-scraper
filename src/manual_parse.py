@@ -40,7 +40,6 @@ def grab_author(soup: "BeautifulSoup") -> str:
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
     val = ['author', 'byline', 'dc.creator', 'by', 'bioLink', "auths"]
     checks = ['meta', 'span', 'a', 'div']
-
     secondary = ["profile","person","author","editor"]
     combinations = list(product(atr,val,checks))
 
@@ -62,15 +61,15 @@ def grab_author(soup: "BeautifulSoup") -> str:
     if meta and meta['content']:
         return meta['content']
 
-
+    # Final way of trying to find some author... ugly but works
     for comb in combinations:
         attribute, value, check = comb
         for each in soup.select(check+'['+attribute+'*="'+value+'"]'):
             if each.string:
-                return authenticate(cleanse(each.string, "author"), "author")
+                return is_validfield(cleanse(each.string, "author"), "author")
             for link in secondary:
                 if each.select_one(f"a[href*={link}]") and each.select_one(f"a[href*={link}]").string:
-                    return authenticate(cleanse(each.select_one(f"a[href*={link}]").string, "author"), "author")
+                    return is_validfield(cleanse(each.select_one(f"a[href*={link}]").string, "author"), "author")
 
     return ""
 
@@ -79,9 +78,9 @@ def grab_publish_date(soup: "BeautifulSoup") -> str:
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
     val = ['date', 'time', 'pub']
     checks = ['span', 'div', 'p', 'time']
-    manual_combos = product(atr,val,checks)
-
     meta_scrapes = [["property", "name"], ["published","time","content","date"]]
+
+    manual_combos = product(atr,val,checks)
     meta_combos = product(*meta_scrapes)
 
     dates = []
@@ -102,12 +101,11 @@ def grab_publish_date(soup: "BeautifulSoup") -> str:
         for each in soup.select(check+'['+attribute+'*="' + value + '"]'):
             if each.get('class') and ('pub' in each.get('class') or 'pubdate' in each.get('class')):
                 return parse_date(cleanse(each.string, "date"))
-            if each.get('itemprop') and each.get('itemprop') == 'datePublished':
+            elif each.get('itemprop') and each.get('itemprop') == 'datePublished':
                 return parse_date(cleanse(each.string, "date"))
-            if each.get('datetime'):
+            elif each.get('datetime'):
                 return parse_date(cleanse(each['datetime'], "date"))
-            if each.string:
-                if "Published:" in each.string or "Posted:" in each.string:
+            elif each.string and ("Published:" in each.string or "Posted:" in each.string):
                     parse_date(cleanse(each.string, "date"))
 
     return ""
@@ -121,14 +119,10 @@ def grab_publisher(soup: "BeautifulSoup") -> str:
     meta = soup.select_one('meta[name*=publisher]')
     if meta and meta['content']:
         return process(meta['content'], "publisher")
+
     meta = soup.select_one('meta[name*=copyright]')
     if meta and meta['content']:
         return process(meta['content'], "publisher")
-
-    scope = soup.find_all(text='©')
-    print(scope)
-    if scope:
-        return process(scope[0], "publisher")
 
     return ""
 
@@ -140,26 +134,25 @@ def grab_website(soup: "BeautifulSoup") -> str:
 
 
 def process(line: str, ptype: str) -> str:
-    return authenticate(cleanse(line, ptype), ptype)
+    return is_validfield(cleanse(line, ptype), ptype)
 
 
 def cleanse(line: str, ptype: str) -> str:
-
-    clears = {"author": ["By"], "date": ["Published", "Updated"], "publisher": ["All rights reserved", ".", "©", "Copyright",
-                   "(c)", "Part of"]}
+    clears = {"author": ["By", "More", "From"], "date": ["Published", "Updated"], 
+                "publisher": ["All rights reserved", ".", "©", "Copyright", "(c)", "Part of"]}
 
     if not ptype in clears: return "Parsing error."
 
     for regex in clears[ptype]:
         line = line.replace(regex, "")
-    line = re.sub('\d{4}', '', line).strip()
+        line = line.replace(regex.lower(), "")
 
-    if line.strip() == "": return 'Parsing error.'
+    line = re.sub('\d{4}', '', line).strip()
 
     return line.strip()
 
 
-def authenticate(line: str, ptype: str) -> str:
+def is_validfield(line: str, ptype: str) -> str:
     if len(line) == 0:
         return f"Error retrieving {ptype} !"
     if ptype == "author" or ptype == "publisher":
@@ -170,22 +163,16 @@ def authenticate(line: str, ptype: str) -> str:
     return line
 
 
-def parse_date(date: str) -> str:
-    print('date:',date)
-    parsed = dateparser.parse(date)
+def parse_date(date: str) -> str:    
     try:
+        parsed = dateparser.parse(date)
         return parsed.strftime('%d %B, %Y')
     except:
-        return "Issue scraping date!"
+        print("Date parse issue detected")
+        return ""
 
-def valid_date(date: str) -> bool:
+def is_date(date: str) -> bool:
     return not not dateparser.parse(date)
-
-
-def prepare_JSON(website, publisher, article, first_name, middle_name, lastName, day, month, year):
-    return {'website': website, 'publisher': publisher, 'article': article, 'firstName': first_name,
-            'middleName': middle_name, 'lastName': lastName, 'day': day, 'month': month, 'year': year}
-
 
 def output_JSON(website, publisher, article, author, date):
 
@@ -208,12 +195,5 @@ def output_JSON(website, publisher, article, author, date):
 
 
 
-    return prepare_JSON(website,
-                       publisher,
-                       article,
-                       first_name,
-                       middle_name,
-                       last_name,
-                       day,
-                       month,
-                       year)
+    return {'website': website, 'publisher': publisher, 'article': article, 'firstName': first_name,
+            'middleName': middle_name, 'lastName': last_name, 'day': day, 'month': month, 'year': year}
