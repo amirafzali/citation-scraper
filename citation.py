@@ -13,6 +13,62 @@ from functools import reduce
 from itertools import product
 
 
+def get_formatted_author_name(name: str) -> dict:
+    default = {'firstName': '', 'middleName': '', 'lastName': '', 'fullName': ''}
+
+    if len(name.strip()) == 0: return default
+
+    to_use = name.split(',')[0]
+    name_split = to_use.split(' ')
+    first = middle = last = ''
+
+    if len(name_split) == 1:
+        first = name_split[0]
+    elif len(name_split) == 2:
+        first, last = name_split
+    elif len(name_split) == 3:
+        first,middle,last = name_split
+    
+    return {'firstName': first, 'middleName': middle, 'lastName': last, 'fullName': to_use}
+
+def try_schema(soup: "BeautifulSoup"):
+    data = soup.select_one("script[type*=json]")
+    json_map = {'website': '', 'publisher': '', 'headline': '', 'authors': [], 'published': {'day': '', 'month': '', 'year': ''}}
+    
+    if data and data.string:
+        json_data = json.loads(data.string)
+
+        site = soup.select_one('meta[property*="og:site_name"]')
+
+        if not "@context" in json_data: return json_map
+
+        if 'headline' in json_data: 
+            json_map['headline'] = json_data['headline']
+
+        if 'publisher' in json_data and 'name' in json_data['publisher']:
+            json_map['publisher'] = json_data['publisher']['name']
+
+        if site and 'content' in site:
+            json_map['website'] = site['content']
+
+        if 'author' in json_data:
+            if type(json_data['author']) == list:
+                for elm in json_data['author']:
+                    author = json_data['author']['name']
+                    if author: json_map['authors'].append(get_formatted_author_name(author))
+            else:
+                author = json_data['author']['name']
+                if author: json_map['authors'].append(get_formatted_author_name(author))
+
+        if 'datePublished' in json_data:
+            parsed = dateparser.parse(json_data['datePublished'])
+            if parsed:
+                date = parsed.strftime('%d %B %Y')
+                day, month, year = date.split(" ")
+                json_map['published'] = {'day': day, 'month': month, 'year': year}
+
+    print(json_map)
+
 def grab_article_title(soup: "BeautifulSoup") -> str:
 
     metas = [["name", "citation_title"], ["property", "title"]]
@@ -27,27 +83,33 @@ def grab_article_title(soup: "BeautifulSoup") -> str:
 
     # Manual Scrapes
     for tag in manual:
-        if soup.find(tag):
-            return soup[tag].string
+        if soup.find(tag): return soup[tag].string
 
     return "No article title found!"
 
 
 
 def grab_author(soup: "BeautifulSoup") -> str:
+
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
     val = ['author', 'byline', 'dc.creator', 'by', 'bioLink', "auths"]
     checks = ['meta', 'span', 'a', 'div']
+
     secondary = ["profile","person","author","editor"]
     combinations = list(product(atr,val,checks))
 
-    # Multiple authors check with proper tag
+
+    # Multiple authors check with meta tag
+    if(soup.select_one('meta[name*=citation_authors]')):
+        return soup.select_one('meta[name*=citation_authors]')['content']
+
     if(soup.select_one('meta[name*=citation_author]')):
         meta = soup.select('meta[name=citation_author]')
         authors = ""
         for author in meta:
             authors += f"{author['content']}, "
         return authors
+
 
     # Single author check
     meta = soup.select_one('meta[name*=author]')
@@ -61,8 +123,8 @@ def grab_author(soup: "BeautifulSoup") -> str:
             if each.string:
                 return authenticate(cleanse(each.string, "author"), "author")
             for link in secondary:
-                if each.select_one(f"a[href*={secondary}]") and each.select_one(f"a[href*={secondary}]").string:
-                    return authenticate(cleanse(each.select_one(f"a[href*={secondary}]").string, "author"), "author")
+                if each.select_one(f"a[href*={link}]") and each.select_one(f"a[href*={link}]").string:
+                    return authenticate(cleanse(each.select_one(f"a[href*={link}]").string, "author"), "author")
 
     return "No author name found!"
 
@@ -75,8 +137,9 @@ def grab_publish_date(soup: "BeautifulSoup") -> str:
 
     meta_scrapes = [["property", "name"], ["published","time","content","date"]]
     meta_combos = product(*meta_scrapes)
+
+    dates = []
     
-    parsed_date = ""
 
     # Try to grab from meta data
     for combo in meta_combos:
@@ -171,7 +234,7 @@ def cleanse(line: str, ptype: str) -> str:
 
 def authenticate(line: str, ptype: str) -> str:
     if len(line) == 0:
-        return "Error retrieving " + ptype + "!"
+        return f"Error retrieving {ptype} !"
     if ptype == "author" or ptype == "publisher":
         if 4 < len(line) < 45:
             return line
@@ -187,6 +250,9 @@ def parse_date(date: str) -> str:
         return parsed.strftime('%d %B, %Y')
     except:
         return "Issue scraping date!"
+
+def valid_date(date: str) -> bool:
+    return not not dateparser.parse(date)
 
 
 def prepare_JSON(website, publisher, article, first_name, middle_name, lastName, day, month, year):
@@ -234,6 +300,9 @@ def sanitize_url(url: str) -> str:
 def get_sitation_fields(res):
     page_content = res.content
     soup = BeautifulSoup(page_content, "lxml")
+
+    try_schema(soup)
+
     website_name = grab_website(soup).strip()
     publisher = grab_publisher(soup).strip()
     article = grab_article_title(soup).strip()
