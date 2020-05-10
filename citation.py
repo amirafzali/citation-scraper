@@ -14,20 +14,21 @@ from itertools import product
 
 
 def grab_article_title(soup: "BeautifulSoup") -> str:
-    # Meta Tag Check
-    meta = soup.select_one('meta[name*=citation_title]')
-    if meta and meta['content']:
-        return meta['content']
 
-    meta = soup.select_one('meta[property*=title]')
-    if meta and meta['content']:
-        return meta['content']
+    metas = [["name", "citation_title"], ["property", "title"]]
+    manual = ["title", "h1"]
+
+    # Meta Tag Check
+    for combo in metas:
+        f1, f2 = combo
+        meta = soup.select_one(f'meta[{f1}*={f2}]')
+        if meta and meta['content']:
+            return meta['content']
 
     # Manual Scrapes
-    elif soup.find("title"):
-        return soup.title.string
-    elif soup.find("h1"):
-        return soup.h1.string
+    for tag in manual:
+        if soup.find(tag):
+            return soup[tag].string
 
     return "No article title found!"
 
@@ -37,8 +38,10 @@ def grab_author(soup: "BeautifulSoup") -> str:
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
     val = ['author', 'byline', 'dc.creator', 'by', 'bioLink', "auths"]
     checks = ['meta', 'span', 'a', 'div']
+    secondary = ["profile","person","author","editor"]
     combinations = list(product(atr,val,checks))
 
+    # Multiple authors check with proper tag
     if(soup.select_one('meta[name*=citation_author]')):
         meta = soup.select('meta[name=citation_author]')
         authors = ""
@@ -46,50 +49,41 @@ def grab_author(soup: "BeautifulSoup") -> str:
             authors += f"{author['content']}, "
         return authors
 
+    # Single author check
     meta = soup.select_one('meta[name*=author]')
-    # print(metaCheck)
     if meta and meta['content']:
         return meta['content']
 
 
     for comb in combinations:
         attribute, value, check = comb
-
         for each in soup.select(check+'['+attribute+'*="'+value+'"]'):
             if each.string:
                 return authenticate(cleanse(each.string, "author"), "author")
-            if each.select_one("a[href*=profile]") and each.select_one("a[href*=profile]").string:
-                return authenticate(cleanse(each.select_one("a[href*=profile]").string, "author"), "author")
-            if each.select_one("a[href*=person]") and each.select_one("a[href*=person]").string:
-                return authenticate(cleanse(each.select_one("a[href*=person]").string, "author"), "author")
-            if each.select_one("a[href*=author]") and each.select_one("a[href*=author]").string:
-                return authenticate(cleanse(each.select_one("a[href*=author]").string, "author"), "author")
-            if each.select_one("a[href*=editor]") and each.select_one("a[href*=editor]").string:
-                return authenticate(cleanse(each.select_one("a[href*=editor]").string, "author"), "author")
+            for link in secondary:
+                if each.select_one(f"a[href*={secondary}]") and each.select_one(f"a[href*={secondary}]").string:
+                    return authenticate(cleanse(each.select_one(f"a[href*={secondary}]").string, "author"), "author")
 
     return "No author name found!"
 
 
-def grab_time(soup: "BeautifulSoup") -> str:
+def grab_publish_date(soup: "BeautifulSoup") -> str:
     atr = ['name', 'rel', 'itemprop', 'class', 'id']
     val = ['date', 'time', 'pub']
     checks = ['span', 'div', 'p', 'time']
+    manual_combos = [atr,val,checks]
 
-    meta = soup.select_one('meta[property*=published]')
-    if meta and meta['content']:
-        return cleanse(parse_date(meta['content']), "date")
+    meta_scrapes = [["property", "name"], ["published","time","content","date"]]
+    meta_combos = product(*meta_scrapes)
+    
+    parsed_date = ""
 
-    meta = soup.select_one('meta[property*=time]')
-    if meta and meta['content']:
-        return cleanse(parse_date(meta['content']), "date")
-
-    meta = soup.select_one('meta[name*=published]')
-    if meta and meta['content']:
-        return cleanse(parse_date(meta['content']), "date")
-
-    meta = soup.select_one('meta[name*=date]')
-    if meta and meta['content'] and not meta['name'].find('validate'):
-        return cleanse(parse_date(meta['content']), "date")
+    # Try to grab from meta data
+    for combo in meta_combos:
+        attr, val = combo
+        meta = soup.select_one(f'meta[{attr}*={val}]')
+        if meta and meta['content']:
+            if parse_date(meta['content']) != 'Issue scraping date!': return parse_date(cleanse(meta['content'], "date"))
 
     if soup.select_one('time') and soup.select_one('time').has_attr('datetime'):
         return cleanse(parse_date(soup.select_one('time')['datetime']), "date")
@@ -149,7 +143,7 @@ def grab_publisher(soup: "BeautifulSoup") -> str:
 
 
 def grab_website(soup: "BeautifulSoup") -> str:
-    meta = soup.select_one('meta[property*=og:site_name]')
+    meta = soup.select_one('meta[property*="og:site_name"]')
     if meta and meta['content']:
         return meta['content']
     return "No website name found!"
@@ -187,7 +181,7 @@ def authenticate(line: str, ptype: str) -> str:
 
 
 def parse_date(date: str) -> str:
-    print(date)
+    print('date:',date)
     parsed = dateparser.parse(date)
     try:
         return parsed.strftime('%d %B, %Y')
@@ -234,13 +228,19 @@ def output_JSON(website, publisher, article, author, date):
 
 def sanitize_url(url: str) -> str:
     url = url.replace(" ", "")
-    prefix = ""
-
-    if not url.startswith("http://") and not url.startswith("https://"):
-        prefix = "http://"
-    
+    prefix = "http://" if not url.startswith("http://") and not url.startswith("https://") else ""
     return prefix+url
 
+def get_sitation_fields(res):
+    page_content = res.content
+    soup = BeautifulSoup(page_content, "lxml")
+    website_name = grab_website(soup).strip()
+    publisher = grab_publisher(soup).strip()
+    article = grab_article_title(soup).strip()
+    authors = grab_author(soup).strip()
+    date = grab_publish_date(soup).strip()
+
+    return [website_name, publisher, article, authors, date]
 
 def main():
     while True:
@@ -266,13 +266,7 @@ def main():
         except:
             print('An error occured. Please restart tool.')
 
-    page_content = result.content
-    soup = BeautifulSoup(page_content, "lxml")
-    website_name = grab_website(soup)
-    publisher = grab_publisher(soup)
-    article = grab_article_title(soup).strip()
-    authors = grab_author(soup).strip()
-    date = grab_time(soup).strip()
+    website_name, publisher, article, authors, date = get_sitation_fields(result)
     print("Website: " + website_name)
     print("Publisher: " + publisher)
     print("Article Title: " + article)
